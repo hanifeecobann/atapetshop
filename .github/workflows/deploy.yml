@@ -1,0 +1,51 @@
+name: Yayınla (GitHub Pages)
+
+# Kodu GitHub'a gönderdiğinde (main dalına push) uygulama otomatik derlenir
+# ve ücretsiz olarak https://KULLANICI.github.io/DEPO/ adresinde yayınlanır.
+# Kendi bilgisayarına Flutter kurman gerekmez.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Eksik web dosyalarını tamamlar; var olan dosyalarının üzerine yazmaz.
+      - run: flutter create . --platforms web --project-name atapetshop
+
+      - run: flutter pub get
+
+      - run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

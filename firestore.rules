@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Yönetici = admins koleksiyonunda kendi UID'siyle bir belge olan hesap.
+    // Bu belgeler yalnızca Firebase Console'dan elle eklenir; uygulama yazamaz.
+    function isAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Ürünleri, mağaza bilgisini ve duyuruyu herkes görebilir; yalnızca yönetici değiştirir.
+    match /products/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Kullanıcı yalnızca kendi profilini (adres, favori, telefon...) okuyup yazar.
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /orders/{id} {
+      // Müşteri kendi siparişlerini, yönetici hepsini görür.
+      allow read: if signedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Müşteri yalnızca kendi adına, "Yeni" durumda ve düzgün biçimde sipariş oluşturabilir.
+      allow create: if signedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == 'Yeni' &&
+        request.resource.data.items is list &&
+        request.resource.data.items.size() > 0 &&
+        request.resource.data.items.size() <= 50 &&
+        request.resource.data.total is number &&
+        request.resource.data.total > 0;
+
+      // Yönetici durumu değiştirir. Müşteri yalnızca "Yeni" siparişini iptal edebilir.
+      allow update: if isAdmin() ||
+        (signedIn() &&
+         resource.data.userId == request.auth.uid &&
+         resource.data.status == 'Yeni' &&
+         request.resource.data.status == 'İptal' &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['status', 'updatedAt']));
+
+      allow delete: if false;
+    }
+  }
+}
